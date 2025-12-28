@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>어린이 키 예측 AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .input-section, .result-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+        }
+
+        .input-section h2, .result-section h2 {
+            color: #333;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #888;
+            font-size: 0.85em;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .radio-group input[type="radio"] {
+            width: auto;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .prediction-value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .prediction-value span {
+            font-size: 0.5em;
+            color: #888;
+            font-weight: normal;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .confidence-high {
+            background: #4caf50;
+            color: white;
+        }
+
+        .confidence-medium {
+            background: #ff9800;
+            color: white;
+        }
+
+        .confidence-low {
+            background: #f44336;
+            color: white;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-top: 20px;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #c33;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #1565c0;
+        }
+
+        .height-history-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .height-history-item input {
+            flex: 1;
+        }
+
+        .btn-remove {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .btn-remove:hover {
+            background: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📏 어린이 키 예측 AI</h1>
+            <p>현재 정보를 입력하면 미래 키를 예측해드립니다</p>
+        </div>
+
+        <div class="content">
+            <div class="input-section">
+                <h2>입력 정보</h2>
+                
+                <div id="adult-tab">
+                    <div class="info-box">
+                        💡 정보를 많이 입력할수록 더 정확한 예측이 가능합니다.
+                    </div>
+
+                    <form id="adult-form">
+                        <div class="form-group">
+                            <label>성별 *</label>
+                            <div class="radio-group">
+                                <label>
+                                    <input type="radio" name="gender" value="M" required>
+                                    남아
+                                </label>
+                                <label>
+                                    <input type="radio" name="gender" value="F" required>
+                                    여아
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>생년월일 *</label>
+                            <input type="date" id="birth_date" name="birth_date" required>
+                            <small>한국 나이와 만 나이 차이를 자동으로 계산합니다</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>현재 키 (cm) *</label>
+                            <input type="number" id="height_cm" name="height_cm" min="50" max="200" step="0.1" required placeholder="예: 140">
+                            <small>현재 시점의 키를 입력해주세요</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>과거 키 기록 추가 (선택사항)</label>
+                            <div id="height-history-container"></div>
+                            <button type="button" class="btn" style="margin-top: 10px; background: #4caf50;" onclick="addHeightHistory()">+ 과거 키 기록 추가</button>
+                            <small>과거 키 기록을 추가하면 더 정확한 예측이 가능합니다</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>아버지 키 (cm)</label>
+                            <input type="number" id="father_height" name="father_height" min="140" max="210" step="0.1" placeholder="예: 175">
+                            <small>선택사항: 부모 키 정보가 있으면 매우 정확합니다</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>어머니 키 (cm)</label>
+                            <input type="number" id="mother_height" name="mother_height" min="140" max="200" step="0.1" placeholder="예: 162">
+                            <small>선택사항: 부모 키 정보가 있으면 매우 정확합니다</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>국가/지역</label>
+                            <select id="country_code" name="country_code">
+                                <option value="DEFAULT">기본 (전체 평균)</option>
+                                <option value="KR" selected>대한민국</option>
+                                <option value="JP">일본</option>
+                                <option value="CN">중국</option>
+                                <option value="VN">베트남</option>
+                                <option value="US">미국</option>
+                                <option value="GB">영국</option>
+                                <option value="DE">독일</option>
+                                <option value="NL">네덜란드</option>
+                            </select>
+                            <small>국가별 평균 키 차이를 반영한 보정이 적용됩니다</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>고급 옵션</label>
+                            <div style="margin-top: 10px;">
+                                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                                    <input type="checkbox" id="use_genetic_formulas" checked style="width: auto; margin-right: 8px;">
+                                    유전 공식 보정 사용 (Mid-parental, Tanner, Khamis-Roche)
+                                </label>
+                                <label style="display: flex; align-items: center;">
+                                    <input type="checkbox" id="use_growth_pattern" checked style="width: auto; margin-right: 8px;">
+                                    개인 성장 패턴 분석 사용
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn">예측하기</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="result-section">
+                <h2>예측 결과</h2>
+                <div id="result-area">
+                    <div class="loading">
+                        정보를 입력하고 예측 버튼을 눌러주세요
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let growthChart = null;
+        let heightHistoryCount = 0;
+
+        function addHeightHistory() {
+            const container = document.getElementById('height-history-container');
+            const item = document.createElement('div');
+            item.className = 'height-history-item';
+            item.id = `history-${heightHistoryCount}`;
+            item.innerHTML = `
+                <input type="date" class="history-date" placeholder="날짜" required>
+                <input type="number" class="history-height" placeholder="키 (cm)" min="50" max="200" step="0.1" required>
+                <button type="button" class="btn-remove" onclick="removeHeightHistory(${heightHistoryCount})">삭제</button>
+            `;
+            container.appendChild(item);
+            heightHistoryCount++;
+        }
+
+        function removeHeightHistory(id) {
+            const item = document.getElementById(`history-${id}`);
+            if (item) {
+                item.remove();
+            }
+        }
+
+
+        // 성인 키 예측
+        document.getElementById('adult-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // 과거 키 기록 수집
+            const historyItems = document.querySelectorAll('.height-history-item');
+            const height_history = [];
+            historyItems.forEach(item => {
+                const date = item.querySelector('.history-date').value;
+                const height = parseFloat(item.querySelector('.history-height').value);
+                if (date && height) {
+                    height_history.push({
+                        date: date,
+                        height_cm: height
+                    });
+                }
+            });
+
+            const formData = {
+                gender: document.querySelector('input[name="gender"]:checked')?.value,
+                birth_date: document.getElementById('birth_date').value,
+                current_height_cm: parseFloat(document.getElementById('height_cm').value),
+                father_height_cm: parseFloat(document.getElementById('father_height').value) || null,
+                mother_height_cm: parseFloat(document.getElementById('mother_height').value) || null,
+                height_history: height_history.length > 0 ? height_history : null,
+                country_code: document.getElementById('country_code').value,
+                use_genetic_formulas: document.getElementById('use_genetic_formulas').checked,
+                use_growth_pattern: document.getElementById('use_growth_pattern').checked
+            };
+
+            if (!formData.gender) {
+                showError('성별을 선택해주세요.');
+                return;
+            }
+
+            if (!formData.birth_date) {
+                showError('생년월일을 입력해주세요.');
+                return;
+            }
+
+            if (!formData.current_height_cm) {
+                showError('현재 키를 입력해주세요.');
+                return;
+            }
+
+            try {
+                showLoading();
+                const response = await fetch('/api/predict/adult', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAdultResult(data);
+                    // 성장 곡선도 함께 표시
+                    if (data.growth_curve) {
+                        showGrowthCurveResult(data.growth_curve, data.prediction);
+                    }
+                } else {
+                    showError(data.error || '예측 중 오류가 발생했습니다.');
+                }
+            } catch (error) {
+                showError('예측 요청 중 오류가 발생했습니다: ' + error.message);
+            }
+        });
+
+        function showLoading() {
+            document.getElementById('result-area').innerHTML = 
+                '<div class="loading">예측 중...</div>';
+        }
+
+        function showError(message) {
+            document.getElementById('result-area').innerHTML = 
+                `<div class="error-message">❌ ${message}</div>`;
+        }
+
+        function showAdultResult(data) {
+            const confidenceClass = {
+                'very_high': 'confidence-high',
+                'high': 'confidence-high',
+                'medium': 'confidence-medium',
+                'low': 'confidence-low'
+            }[data.confidence] || 'confidence-medium';
+
+            const confidenceText = {
+                'very_high': '매우 높음',
+                'high': '높음',
+                'medium': '보통',
+                'low': '낮음'
+            }[data.confidence] || '보통';
+
+            let detailsHtml = '';
+            if (data.details.galton_prediction) {
+                detailsHtml += `<p>부모 키 기반 예측: ${data.details.galton_prediction.toFixed(1)}cm</p>`;
+            }
+            if (data.details.stunting_prediction) {
+                detailsHtml += `<p>성장 패턴 기반 예측: ${data.details.stunting_prediction.toFixed(1)}cm</p>`;
+            }
+            if (data.details.growth_curve_prediction) {
+                detailsHtml += `<p>성장 곡선 기반 예측: ${data.details.growth_curve_prediction.toFixed(1)}cm</p>`;
+            }
+
+            // 오프셋 조절 정보
+            let adjustmentHtml = '';
+            if (data.details.original_prediction !== undefined && data.details.total_adjustment !== undefined) {
+                const original = data.details.original_prediction.toFixed(1);
+                const adjustment = data.details.total_adjustment.toFixed(1);
+                const sign = adjustment >= 0 ? '+' : '';
+                adjustmentHtml = `
+                    <div style="margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 8px;">
+                        <p style="margin-bottom: 8px;"><strong>오프셋 조절 정보:</strong></p>
+                        <p>기본 예측: ${original}cm</p>
+                        <p>보정 값: ${sign}${adjustment}cm</p>
+                        ${data.details.country_code ? `<p>국가 보정: ${data.details.country_code}</p>` : ''}
+                    </div>
+                `;
+            }
+
+            const html = `
+                <div class="result-card">
+                    <h3>예상 성인 키</h3>
+                    <div class="prediction-value">
+                        ${data.prediction.toFixed(1)}<span>cm</span>
+                    </div>
+                    <div>
+                        <span class="confidence-badge ${confidenceClass}">신뢰도: ${confidenceText}</span>
+                    </div>
+                    <div style="margin-top: 20px; color: #666;">
+                        <p><strong>사용된 모델:</strong> ${data.models_used.join(', ')}</p>
+                        ${detailsHtml}
+                        ${adjustmentHtml}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('result-area').innerHTML = html;
+        }
+
+        function showGrowthCurveResult(data, adultHeight) {
+            // 기존 결과 영역에 추가
+            const resultArea = document.getElementById('result-area');
+            
+            // 성장 곡선 HTML 생성
+            const ages = data.curve.ages;
+            const heights = data.curve.heights;
+            const types = data.curve.types;
+            
+            // 실제 데이터와 예측 데이터 분리
+            const actualAges = [];
+            const actualHeights = [];
+            const predictedAges = [];
+            const predictedHeights = [];
+            
+            ages.forEach((age, idx) => {
+                if (types[idx] === 'actual') {
+                    actualAges.push(age);
+                    actualHeights.push(heights[idx]);
+                } else {
+                    predictedAges.push(age);
+                    predictedHeights.push(heights[idx]);
+                }
+            });
+            
+            // 18세 예측이 있으면 성인 키 예측과 일치시키기 (이미 서버에서 처리됨)
+            
+            const growthHtml = `
+                <div class="result-card">
+                    <h3>성장 곡선 예측</h3>
+                    <p style="margin-bottom: 15px; color: #666;">
+                        현재: ${data.current.age_years}세, ${data.current.height_cm}cm
+                    </p>
+                    <div class="chart-container">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <h3>예측 결과 표</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f0f0f0;">
+                                <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">나이</th>
+                                <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">예상 키</th>
+                                <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">예상 성장</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${Object.entries(data.predictions).map(([age, pred]) => {
+                                const ageNum = parseInt(age);
+                                const height = ageNum === 18 && adultHeight !== undefined ? adultHeight : pred.predicted_height_cm;
+                                return `
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;">${age}세</td>
+                                        <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;"><strong>${height.toFixed(1)}cm</strong></td>
+                                        <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee; color: #4caf50;">+${pred.growth_expected.toFixed(1)}cm</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            resultArea.insertAdjacentHTML('beforeend', growthHtml);
+
+            // 차트 그리기
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            
+            if (growthChart) {
+                growthChart.destroy();
+            }
+
+            // 모든 데이터를 나이 순으로 정렬
+            const sortedData = ages.map((age, idx) => ({age, height: heights[idx], type: types[idx]}))
+                                  .sort((a, b) => a.age - b.age);
+            
+            growthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedData.map(d => `${d.age}세`),
+                    datasets: [
+                        {
+                            label: '실제 키',
+                            data: sortedData.filter(d => d.type === 'actual').map(d => d.height),
+                            borderColor: '#4caf50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 6,
+                            pointBackgroundColor: '#4caf50',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            tension: 0.4,
+                            fill: false
+                        },
+                        {
+                            label: '예측 키',
+                            data: sortedData.map(d => d.height),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: sortedData.map(d => d.type === 'predicted' ? 6 : 0),
+                            pointBackgroundColor: '#667eea',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}cm`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: '키 (cm)'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '나이'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+

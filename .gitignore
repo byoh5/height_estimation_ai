@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# 데이터 파일 (큰 파일)
+data/raw/*.csv
+data/raw/*.zip
+data/raw/kaggle/**/*.csv
+data/processed/*.csv
+!data/processed/.gitkeep
+
+# 모델 파일
+models/saved_models/*.pkl
+models/saved_models/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+/tmp/
+
+# 환경 변수
+.env
+.env.local
+
+# 백업
+*.backup
+*_backup/
+synthetic_backup/
+
