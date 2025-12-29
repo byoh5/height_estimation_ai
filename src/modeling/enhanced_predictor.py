@@ -150,6 +150,7 @@ class EnhancedHeightPredictor:
                 father_height_cm: Optional[float] = None,
                 mother_height_cm: Optional[float] = None,
                 height_history: Optional[List[Dict]] = None,
+                menarche_age: Optional[float] = None,
                 country_code: str = 'DEFAULT',
                 use_genetic_formulas: bool = True,
                 use_growth_pattern: bool = True) -> Dict:
@@ -170,6 +171,10 @@ class EnhancedHeightPredictor:
             father_height_cm: 아버지 키 (cm)
             mother_height_cm: 어머니 키 (cm)
             height_history: 과거 키 기록 [{'date': 'YYYY-MM-DD', 'height_cm': float}, ...]
+            menarche_age: 초경 시작 나이 (여성만, 선택사항)
+            country_code: 국가 코드
+            use_genetic_formulas: 유전 공식 사용 여부
+            use_growth_pattern: 성장 패턴 분석 사용 여부
         
         Returns:
             예측 결과 딕셔너리
@@ -184,6 +189,50 @@ class EnhancedHeightPredictor:
         # 필수 입력 검증
         if not gender:
             raise ValueError("성별(gender)은 필수 입력입니다.")
+        
+        # 성별 검증
+        if gender.upper() not in ['M', 'F']:
+            raise ValueError(f"성별은 'M' 또는 'F'만 허용됩니다. 입력값: {gender}")
+        
+        # 키 값 검증
+        if current_height_cm is not None:
+            if current_height_cm <= 0:
+                raise ValueError(f"현재 키는 0보다 커야 합니다. 입력값: {current_height_cm}cm")
+            if current_height_cm > 300:
+                raise ValueError(f"현재 키는 300cm 이하여야 합니다. 입력값: {current_height_cm}cm")
+        
+        # 부모 키 검증
+        if father_height_cm is not None:
+            if father_height_cm <= 0:
+                raise ValueError(f"아버지 키는 0보다 커야 합니다. 입력값: {father_height_cm}cm")
+            if father_height_cm > 300:
+                raise ValueError(f"아버지 키는 300cm 이하여야 합니다. 입력값: {father_height_cm}cm")
+        
+        if mother_height_cm is not None:
+            if mother_height_cm <= 0:
+                raise ValueError(f"어머니 키는 0보다 커야 합니다. 입력값: {mother_height_cm}cm")
+            if mother_height_cm > 300:
+                raise ValueError(f"어머니 키는 300cm 이하여야 합니다. 입력값: {mother_height_cm}cm")
+        
+        # 초경 나이 검증 (여성만)
+        if menarche_age is not None:
+            if gender.upper() != 'F':
+                # 남성에게 초경 정보가 있으면 무시 (경고 없이)
+                menarche_age = None
+            else:
+                if menarche_age < 0:
+                    raise ValueError(f"초경 나이는 0 이상이어야 합니다. 입력값: {menarche_age}세")
+                if menarche_age > 18:
+                    raise ValueError(f"초경 나이는 18세 이하여야 합니다. 입력값: {menarche_age}세")
+                
+                # 현재 나이와 비교
+                if birth_date:
+                    try:
+                        age_years_temp, _ = self._calculate_age_from_birthdate(birth_date, current_date)
+                        if menarche_age > age_years_temp:
+                            raise ValueError(f"초경 나이({menarche_age}세)는 현재 나이({age_years_temp:.1f}세)보다 클 수 없습니다.")
+                    except:
+                        pass  # 나이 계산 실패 시 검증 건너뜀
         
         # 나이 계산
         age_years = None
@@ -227,6 +276,49 @@ class EnhancedHeightPredictor:
         
         has_parents = father_height_cm is not None and mother_height_cm is not None
         has_growth_data = current_height_cm is not None and age_years is not None
+        has_menarche = gender == 'F' and menarche_age is not None
+        
+        # 전략 0: 초경 기반 예측 (여성만, 초경 정보가 있을 때)
+        if has_menarche and has_growth_data:
+            try:
+                from src.utils.growth_factors import predict_female_height_with_menarche
+                
+                menarche_prediction = predict_female_height_with_menarche(
+                    age=age_years,
+                    height=current_height_cm,
+                    menarche_age=menarche_age
+                )
+                
+                pred_menarche = menarche_prediction['predicted_height']
+                
+                # 초경 정보가 있으면 높은 가중치 부여
+                if has_parents:
+                    # 부모 키가 있으면 초경 예측과 부모 키 예측에 동일한 가중치
+                    predictions.append(pred_menarche)
+                    weights.append(0.4)  # 부모 키와 동일한 가중치
+                else:
+                    # 부모 키가 없으면 초경 예측에 더 높은 가중치
+                    predictions.append(pred_menarche)
+                    weights.append(0.6)
+                
+                results['model_used'].append('menarche')
+                results['details']['menarche_prediction'] = float(pred_menarche)
+                results['details']['menarche_info'] = {
+                    'menarche_age': menarche_age,
+                    'growth_before_menarche': menarche_prediction.get('growth_before_menarche'),
+                    'growth_after_menarche': menarche_prediction.get('growth_after_menarche'),
+                    'years_since_menarche': menarche_prediction.get('years_since_menarche'),
+                    'years_until_menarche': menarche_prediction.get('years_until_menarche')
+                }
+                # 초경 정보가 있으면 신뢰도 향상
+                if results['confidence'] == 'low':
+                    results['confidence'] = 'medium'
+                elif results['confidence'] == 'medium':
+                    results['confidence'] = 'high'
+                else:
+                    results['confidence'] = 'very_high'
+            except Exception as e:
+                print(f"⚠️  초경 기반 예측 오류: {e}")
         
         # 전략 1: 부모 키 기반 예측 (Galton 모델)
         if has_parents and self.galton_model is not None:
@@ -234,19 +326,27 @@ class EnhancedHeightPredictor:
                 X_galton = self._prepare_galton_features(father_height_cm, mother_height_cm, gender)
                 pred_galton = self.galton_model.predict(X_galton)[0]
                 predictions.append(pred_galton)
-                # 성장 데이터가 있으면 가중치 0.8, 없으면 1.0
-                if has_growth_data:
+                # 초경 정보가 있으면 가중치 조정
+                if has_menarche:
+                    weights.append(0.4)  # 초경 정보가 있으면 부모 키와 동일한 가중치
+                elif has_growth_data:
                     weights.append(0.8)
                 else:
                     weights.append(1.0)
                 results['model_used'].append('galton')
                 results['details']['galton_prediction'] = float(pred_galton)
-                results['confidence'] = 'high'
+                if not has_menarche:  # 초경 정보가 없을 때만 신뢰도 설정
+                    results['confidence'] = 'high'
             except Exception as e:
                 print(f"⚠️  Galton 모델 예측 오류: {e}")
         
         # 전략 2: 성장 곡선 기반 예측 (5세 초과일 때)
+        # 주의: 학습 데이터는 0-5세만 포함하므로, 나이가 많거나 키가 큰 경우 신뢰도 낮음
         if has_growth_data and age_years > 5:
+            # 학습 데이터 범위 확인: 나이 0-5세, 키 40-128cm
+            # 나이가 많거나 키가 큰 경우 경고
+            is_out_of_range = age_years > 10 or current_height_cm > 140
+            
             try:
                 pred_growth_curve = self._estimate_adult_height_from_growth_curve(
                     current_age_years=age_years,
@@ -254,21 +354,61 @@ class EnhancedHeightPredictor:
                     gender=gender
                 )
                 if pred_growth_curve is not None:
-                    if not has_parents:
-                        # 부모 키가 없으면 성장 곡선 모델만 사용 (일관성 확보)
+                    # 예측값이 현재 키보다 낮으면 보정
+                    if pred_growth_curve < current_height_cm:
+                        # 최소한 현재 키 + 나이에 따른 최소 성장량 보장
+                        remaining_years = 18 - age_years
+                        if remaining_years > 0:
+                            # 나이에 따른 최소 성장량 (의료 연구 기반)
+                            if age_years < 12:
+                                min_growth = remaining_years * 2.0  # 사춘기 전: 연간 최소 2cm
+                            elif age_years < 15:
+                                min_growth = remaining_years * 1.5  # 사춘기 진행: 연간 최소 1.5cm
+                            else:
+                                min_growth = remaining_years * 1.0  # 성장 완료 직전: 연간 최소 1cm
+                            pred_growth_curve = max(pred_growth_curve, current_height_cm + min_growth)
+                    
+                    # 나이가 많을수록 신뢰도 낮춤
+                    if age_years > 10:
+                        growth_curve_weight = 0.1  # 매우 낮은 가중치
+                        growth_confidence = 'low'
+                    elif age_years > 8:
+                        growth_curve_weight = 0.3
+                        growth_confidence = 'medium'
+                    else:
+                        growth_curve_weight = 0.2 if has_parents else 1.0
+                        growth_confidence = 'high'
+                    
+                    # 초경 정보가 있으면 가중치 조정
+                    if has_menarche:
+                        growth_curve_weight = 0.2  # 초경 정보가 있으면 낮은 가중치
+                    
+                    if not has_parents and not has_menarche:
+                        # 부모 키도 초경 정보도 없으면 성장 곡선 모델만 사용 (일관성 확보)
                         predictions = [pred_growth_curve]
                         weights = [1.0]
                         results['model_used'] = ['growth_curve']
                         results['details']['growth_curve_prediction'] = float(pred_growth_curve)
-                        results['confidence'] = 'high'
+                        results['confidence'] = growth_confidence
+                        if is_out_of_range:
+                            results['confidence'] = 'low'
+                            results['details']['warning'] = '학습 데이터 범위를 벗어난 예측입니다. 신뢰도가 낮을 수 있습니다.'
                     else:
-                        # 부모 키가 있으면 보조 모델로 사용 (가중치 0.2)
+                        # 부모 키나 초경 정보가 있으면 보조 모델로 사용 (가중치 조정)
                         predictions.append(pred_growth_curve)
-                        weights.append(0.2)
+                        weights.append(growth_curve_weight)
                         results['model_used'].append('growth_curve')
                         results['details']['growth_curve_prediction'] = float(pred_growth_curve)
+                        if is_out_of_range:
+                            results['details']['warning'] = '성장 곡선 모델이 학습 데이터 범위를 벗어난 예측입니다.'
             except Exception as e:
                 print(f"⚠️  성장 곡선 모델 예측 오류: {e}")
+                # 성장 곡선 모델 실패 시, 부모 키가 없으면 오류 발생
+                if not has_parents and not predictions:
+                    raise ValueError(
+                        f"예측할 수 있는 충분한 정보가 없습니다. "
+                        f"부모 키 정보를 제공하거나, 나이가 10세 이하일 때 사용해주세요."
+                    )
         
         # 전략 3: Stunting 모델 (5세 이하에서만 사용)
         if has_growth_data and age_years is not None and age_years <= 5 and self.stunting_model is not None:
@@ -333,6 +473,9 @@ class EnhancedHeightPredictor:
                 for r in height_records
             ]
         
+        # 오프셋 조절 적용 (단, 가중 평균 결과를 우선시)
+        original_prediction = results['predicted_height']
+        
         adjustment_result = adjuster.calculate_final_prediction(
             base_prediction=results['predicted_height'],
             father_cm=father_height_cm,
@@ -345,12 +488,63 @@ class EnhancedHeightPredictor:
             use_growth_pattern=use_growth_pattern
         )
         
-        # 보정된 예측값으로 업데이트
-        original_prediction = results['predicted_height']
-        results['predicted_height'] = adjustment_result['final_prediction']
+        # 오프셋 조절 강도 제한: 가중 평균 결과를 크게 벗어나지 않도록
+        total_adjustment = adjustment_result['total_adjustment']
+        adjusted_prediction = adjustment_result['final_prediction']
+        
+        # 성장 곡선 예측이 가중 평균보다 훨씬 높으면, 오프셋 조절을 덜 적용
+        if 'growth_curve_prediction' in results.get('details', {}):
+            growth_curve_pred = results['details']['growth_curve_prediction']
+            if growth_curve_pred > original_prediction + 10:
+                # 성장 곡선이 높을 때는 오프셋 조절을 50%만 적용
+                adjustment_limit = (adjusted_prediction - original_prediction) * 0.5
+                adjusted_prediction = original_prediction + adjustment_limit
+                total_adjustment = adjustment_limit
+        
+        # 최종 예측값이 현재 키보다 낮거나, 가중 평균보다 너무 낮으면 제한
+        if current_height_cm is not None:
+            remaining_years = 18 - age_years if age_years is not None and age_years < 18 else 1
+            # 나이에 따른 최소 성장량 계산
+            if age_years is not None:
+                if age_years < 12:
+                    min_growth = remaining_years * 2.0  # 사춘기 전: 연간 최소 2cm
+                elif age_years < 15:
+                    min_growth = remaining_years * 1.5  # 사춘기 진행: 연간 최소 1.5cm
+                elif age_years < 18:
+                    min_growth = remaining_years * 1.0  # 성장 완료 직전: 연간 최소 1cm
+                else:
+                    min_growth = 0.5  # 18세 이상: 최소 0.5cm
+            else:
+                min_growth = 1.0  # 나이 정보 없으면 최소 1cm
+            
+            min_acceptable_height = current_height_cm + min_growth
+            
+            if adjusted_prediction < min_acceptable_height:
+                # 최소한 현재 키 + 최소 성장량보다는 높아야 함
+                adjusted_prediction = max(min_acceptable_height, original_prediction * 0.95)
+                total_adjustment = adjusted_prediction - original_prediction
+            elif adjusted_prediction < original_prediction * 0.95:
+                # 가중 평균보다 5% 이상 낮아지지 않도록 제한
+                adjusted_prediction = original_prediction * 0.95
+                total_adjustment = adjusted_prediction - original_prediction
+        
+        # 유전 공식 보정이 너무 강하게 적용되는 경우 제한
+        if 'galton_prediction' in results.get('details', {}) and 'genetic_formulas' in adjustment_result.get('adjustments', {}):
+            galton_pred = results['details']['galton_prediction']
+            genetic_avg = adjustment_result['adjustments']['genetic_formulas'].get('average', 0)
+            # 유전 공식 평균이 가중 평균보다 너무 낮으면 보정을 완화
+            if genetic_avg > 0 and genetic_avg < original_prediction - 5:
+                # 유전 공식 보정을 50%만 적용
+                genetic_after = adjustment_result['adjustments']['genetic_formulas'].get('after', adjusted_prediction)
+                genetic_adjustment = genetic_after - original_prediction
+                if genetic_adjustment < 0:  # 음수 조정인 경우
+                    adjusted_prediction = original_prediction + genetic_adjustment * 0.5
+                    total_adjustment = adjusted_prediction - original_prediction
+        
+        results['predicted_height'] = adjusted_prediction
         results['details']['original_prediction'] = original_prediction
         results['details']['adjustments'] = adjustment_result['adjustments']
-        results['details']['total_adjustment'] = adjustment_result['total_adjustment']
+        results['details']['total_adjustment'] = total_adjustment
         results['details']['country_code'] = country_code
         
         return results

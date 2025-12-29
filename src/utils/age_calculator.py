@@ -84,7 +84,7 @@ def parse_date_input(date_str: str) -> Optional[str]:
     
     return None
 
-def validate_birth_date(birth_date: str) -> Tuple[bool, Optional[str]]:
+def validate_birth_date(birth_date: str, allow_future: bool = False) -> Tuple[bool, Optional[str]]:
     """
     생년월일 유효성 검사
     

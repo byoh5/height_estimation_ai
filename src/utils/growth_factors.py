@@ -91,6 +91,164 @@ class GeneticFormulas:
         
         return current_height + (target - current_height) * potential
 
+def get_growth_potential_factor(age: float, gender: str) -> float:
+    """
+    나이별 성장 잠재력 계수 (의료 연구 기반)
+    
+    Args:
+        age: 현재 나이 (세)
+        gender: 성별 ('M' or 'F')
+    
+    Returns:
+        성장 잠재력 계수 (0.0 ~ 1.0)
+        1.0 = 높은 잠재력, 0.0 = 성장 완료
+    """
+    if gender.upper() == 'F':
+        # 여성: 평균 17세에 성장 완료
+        if age < 9:
+            return 1.0  # 사춘기 전: 높은 잠재력
+        elif age < 12:
+            return 0.8  # 사춘기 시작: 높은 잠재력
+        elif age < 15:
+            return 0.5  # 사춘기 진행: 중간 잠재력
+        elif age < 17:
+            return 0.2  # 성장 완료 직전: 낮은 잠재력
+        else:
+            return 0.0  # 성장 완료
+    else:
+        # 남성: 평균 19세에 성장 완료
+        if age < 11:
+            return 1.0  # 사춘기 전: 높은 잠재력
+        elif age < 14:
+            return 0.8  # 사춘기 시작: 높은 잠재력
+        elif age < 17:
+            return 0.5  # 사춘기 진행: 중간 잠재력
+        elif age < 19:
+            return 0.2  # 성장 완료 직전: 낮은 잠재력
+        else:
+            return 0.0  # 성장 완료
+
+def predict_female_height_with_menarche(age: float, height: float, 
+                                        menarche_age: Optional[float] = None) -> Dict:
+    """
+    초경 시기를 고려한 여성 성장 예측 (의료 연구 기반)
+    
+    Args:
+        age: 현재 나이 (세)
+        height: 현재 키 (cm)
+        menarche_age: 초경 시작 나이 (None이면 한국 평균 12.7세 사용)
+    
+    Returns:
+        예측 결과 딕셔너리
+    """
+    if menarche_age is None:
+        # 한국 여성 평균 초경 나이: 12.7세
+        menarche_age = 12.7
+    
+    if age < menarche_age:
+        # 초경 전: 정상 성장 속도
+        remaining_years = menarche_age - age
+        
+        # 나이에 따른 성장 속도 (사춘기 전: 5-6cm/년, 사춘기: 8-9cm/년)
+        if age < 9:
+            growth_rate = 5.5  # 사춘기 전
+        elif age < 11:
+            growth_rate = 7.0  # 사춘기 시작
+        else:
+            growth_rate = 8.5  # 사춘기 진행
+        
+        predicted_growth_before_menarche = remaining_years * growth_rate
+        
+        # 초경 후 추가 성장: 평균 5-7cm
+        post_menarche_growth = 6.0
+        
+        predicted_final_height = height + predicted_growth_before_menarche + post_menarche_growth
+        
+        return {
+            'predicted_height': predicted_final_height,
+            'growth_before_menarche': predicted_growth_before_menarche,
+            'growth_after_menarche': post_menarche_growth,
+            'menarche_age': menarche_age,
+            'years_until_menarche': remaining_years
+        }
+    else:
+        # 초경 후: 성장 속도 급격히 감소
+        years_since_menarche = age - menarche_age
+        
+        if years_since_menarche < 1:
+            # 초경 후 1년 내: 평균 4-5cm
+            remaining_growth = 4.5
+        elif years_since_menarche < 2:
+            # 초경 후 1-2년: 평균 2-3cm
+            remaining_growth = 2.5
+        elif years_since_menarche < 3:
+            # 초경 후 2-3년: 평균 1cm
+            remaining_growth = 1.0
+        else:
+            # 초경 후 3년 이상: 성장 거의 완료
+            remaining_growth = 0.5
+        
+        predicted_final_height = height + remaining_growth
+        
+        return {
+            'predicted_height': predicted_final_height,
+            'growth_before_menarche': 0.0,
+            'growth_after_menarche': remaining_growth,
+            'menarche_age': menarche_age,
+            'years_since_menarche': years_since_menarche
+        }
+
+def detect_growth_spurt(height_records: List[Dict]) -> Dict:
+    """
+    과거 키 기록을 분석하여 성장 급등기 감지 (의료 연구 기반)
+    
+    Args:
+        height_records: [{'age_years': float, 'height_cm': float}, ...]
+    
+    Returns:
+        성장 급등기 분석 결과
+    """
+    if len(height_records) < 2:
+        return {'is_spurt': False, 'peak_velocity': None, 'peak_age': None}
+    
+    # 나이 순으로 정렬
+    sorted_records = sorted(height_records, key=lambda x: x['age_years'])
+    
+    # 성장 속도 계산
+    growth_velocities = []
+    for i in range(1, len(sorted_records)):
+        age_diff = sorted_records[i]['age_years'] - sorted_records[i-1]['age_years']
+        height_diff = sorted_records[i]['height_cm'] - sorted_records[i-1]['height_cm']
+        if age_diff > 0:
+            velocity = height_diff / age_diff  # cm/년
+            growth_velocities.append({
+                'age': sorted_records[i]['age_years'],
+                'velocity': velocity,
+                'height': sorted_records[i]['height_cm']
+            })
+    
+    if not growth_velocities:
+        return {'is_spurt': False, 'peak_velocity': None, 'peak_age': None}
+    
+    # 최대 성장 속도 찾기
+    peak_velocity_data = max(growth_velocities, key=lambda x: x['velocity'])
+    peak_velocity = peak_velocity_data['velocity']
+    peak_age = peak_velocity_data['age']
+    
+    # 성장 급등기 감지: 연간 7cm 이상 성장
+    is_spurt = peak_velocity >= 7.0
+    
+    # 평균 성장 속도
+    avg_velocity = np.mean([v['velocity'] for v in growth_velocities])
+    
+    return {
+        'is_spurt': is_spurt,
+        'peak_velocity': peak_velocity,
+        'peak_age': peak_age,
+        'avg_velocity': avg_velocity,
+        'growth_velocities': growth_velocities
+    }
+
 class GrowthPatternAnalyzer:
     """개인 성장 패턴 분석"""
     
@@ -294,6 +452,7 @@ class HeightPredictionAdjuster:
         }
         
         # 2. 유전 공식 보정 (부모 키가 있을 때)
+        # 주의: 이미 가중 평균으로 부모 키 기반 예측이 반영되었으므로, 여기서는 최소한만 조정
         if use_genetic_formulas and father_cm and mother_cm:
             genetic_predictions = self.apply_genetic_formula_adjustment(
                 father_cm, mother_cm, gender, current_age, current_height
@@ -302,8 +461,15 @@ class HeightPredictionAdjuster:
             # 유전 공식들의 평균
             genetic_avg = np.mean(list(genetic_predictions.values()))
             
-            # 유전 공식 예측과 기본 예측의 가중 평균 (유전 공식 30%)
-            adjusted = adjusted * 0.7 + genetic_avg * 0.3
+            # 유전 공식 예측과 기본 예측의 차이가 크면 조정을 완화
+            # 이미 가중 평균에 부모 키 정보가 반영되었으므로, 추가 조정은 최소화 (10-20%만)
+            genetic_diff = genetic_avg - adjusted
+            if abs(genetic_diff) > 5:  # 차이가 5cm 이상이면 조정 완화
+                # 큰 차이일 때는 10%만 조정
+                adjusted = adjusted + genetic_diff * 0.1
+            else:
+                # 작은 차이일 때는 20%만 조정
+                adjusted = adjusted + genetic_diff * 0.2
             
             result['adjustments']['genetic_formulas'] = {
                 'predictions': genetic_predictions,

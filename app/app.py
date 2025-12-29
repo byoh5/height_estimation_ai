@@ -13,8 +13,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.modeling.enhanced_predictor import EnhancedHeightPredictor
 from src.modeling.enhanced_growth_curve_predictor import EnhancedGrowthCurvePredictor
-from src.utils.age_calculator import validate_birth_date, parse_date_input
+from src.utils.age_calculator import validate_birth_date, parse_date_input, calculate_age
 from src.utils.growth_factors import get_available_countries
+from version import __version__, __app_name__, __description__
 
 app = Flask(__name__)
 
@@ -35,13 +36,22 @@ def init_predictors():
 @app.route('/')
 def index():
     """메인 페이지"""
-    return render_template('index.html')
+    return render_template('index.html', version=__version__, app_name=__app_name__)
 
 @app.route('/api/predict/adult', methods=['POST'])
 def predict_adult_height():
     """성인 키 예측 API (향상된 버전)"""
     try:
-        data = request.json
+        # JSON 파싱 검증
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type이 application/json이어야 합니다.'}), 400
+        
+        try:
+            data = request.json
+            if data is None:
+                return jsonify({'error': 'JSON 데이터가 비어있습니다.'}), 400
+        except Exception as e:
+            return jsonify({'error': f'JSON 파싱 오류: {str(e)}'}), 400
         
         # 입력 데이터 추출
         gender = data.get('gender')
@@ -56,6 +66,10 @@ def predict_adult_height():
         if not gender:
             return jsonify({'error': '성별은 필수 입력입니다.'}), 400
         
+        # 성별 검증
+        if gender.upper() not in ['M', 'F']:
+            return jsonify({'error': f"성별은 'M' 또는 'F'만 허용됩니다. 입력값: {gender}"}), 400
+        
         if not birth_date and not current_height_cm:
             return jsonify({'error': '생년월일 또는 현재 키 중 하나는 필수입니다.'}), 400
         
@@ -64,6 +78,56 @@ def predict_adult_height():
             is_valid, error_msg = validate_birth_date(birth_date)
             if not is_valid:
                 return jsonify({'error': error_msg}), 400
+        
+        # 키 값 검증
+        if current_height_cm is not None:
+            try:
+                current_height_cm = float(current_height_cm)
+                if current_height_cm <= 0:
+                    return jsonify({'error': f'현재 키는 0보다 커야 합니다. 입력값: {current_height_cm}cm'}), 400
+                if current_height_cm > 300:
+                    return jsonify({'error': f'현재 키는 300cm 이하여야 합니다. 입력값: {current_height_cm}cm'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': f'현재 키는 숫자여야 합니다. 입력값: {current_height_cm}'}), 400
+        
+        # 부모 키 검증
+        if father_height_cm is not None:
+            try:
+                father_height_cm = float(father_height_cm)
+                if father_height_cm <= 0:
+                    return jsonify({'error': f'아버지 키는 0보다 커야 합니다. 입력값: {father_height_cm}cm'}), 400
+                if father_height_cm > 300:
+                    return jsonify({'error': f'아버지 키는 300cm 이하여야 합니다. 입력값: {father_height_cm}cm'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': f'아버지 키는 숫자여야 합니다. 입력값: {father_height_cm}'}), 400
+        
+        if mother_height_cm is not None:
+            try:
+                mother_height_cm = float(mother_height_cm)
+                if mother_height_cm <= 0:
+                    return jsonify({'error': f'어머니 키는 0보다 커야 합니다. 입력값: {mother_height_cm}cm'}), 400
+                if mother_height_cm > 300:
+                    return jsonify({'error': f'어머니 키는 300cm 이하여야 합니다. 입력값: {mother_height_cm}cm'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': f'어머니 키는 숫자여야 합니다. 입력값: {mother_height_cm}'}), 400
+        
+        # 초경 정보 추출 및 검증 (여성만)
+        menarche_age = None
+        if gender == 'F':
+            menarche_age = data.get('menarche_age')
+            if menarche_age is not None:
+                # 초경 나이 검증
+                if menarche_age < 8 or menarche_age > 18:
+                    return jsonify({'error': '초경 시작 나이는 8-18세 사이여야 합니다.'}), 400
+                
+                # 현재 나이와 비교 검증
+                if birth_date:
+                    try:
+                        age_years, _ = calculate_age(parse_date_input(birth_date), current_date)
+                        if menarche_age > age_years:
+                            return jsonify({'error': '초경 시작 나이는 현재 나이보다 클 수 없습니다.'}), 400
+                    except:
+                        pass
         
         # 추가 옵션
         country_code = data.get('country_code', 'DEFAULT')
@@ -79,6 +143,7 @@ def predict_adult_height():
             father_height_cm=father_height_cm,
             mother_height_cm=mother_height_cm,
             height_history=height_history,
+            menarche_age=menarche_age,
             country_code=country_code,
             use_genetic_formulas=use_genetic_formulas,
             use_growth_pattern=use_growth_pattern
@@ -111,7 +176,8 @@ def predict_adult_height():
             'confidence': result['confidence'],
             'models_used': result['model_used'],
             'details': result.get('details', {}),
-            'growth_curve': growth_curve_result
+            'growth_curve': growth_curve_result,
+            'version': __version__
         })
     
     except ValueError as e:
@@ -167,9 +233,19 @@ def get_countries():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """버전 정보 반환"""
+    return jsonify({
+        'success': True,
+        'version': __version__,
+        'app_name': __app_name__,
+        'description': __description__
+    })
+
 if __name__ == '__main__':
     print("="*60)
-    print("키 예측 웹 애플리케이션 시작")
+    print(f"{__app_name__} v{__version__}")
     print("="*60)
     
     # 예측기 초기화
