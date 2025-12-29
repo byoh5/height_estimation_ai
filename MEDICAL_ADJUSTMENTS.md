@@ -301,7 +301,7 @@
 
 ---
 
-**작성일**: 2024-12-29  
+**작성일**: 2025-12-29  
 **버전**: 1.0.0  
 **관련 파일**: `src/utils/growth_factors.py`, `src/modeling/enhanced_predictor.py`
 

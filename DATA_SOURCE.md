@@ -241,7 +241,7 @@ https://www.kaggle.com/datasets/rendiputra/stunting-balita-detection-121k-rows
 
 ---
 
-**작성일**: 2024-12-29  
+**작성일**: 2025-12-29  
 **버전**: 1.0.0  
 **데이터 상태**: 실제 데이터만 사용 (121,933행)
 

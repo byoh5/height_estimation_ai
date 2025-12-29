@@ -152,5 +152,5 @@ python3 src/modeling/train_growth_curve_model.py
 
 ---
 
-**최종 업데이트**: 2024-12-28
+**최종 업데이트**: 2025-12-29
 
