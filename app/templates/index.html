@@ -1148,7 +1148,7 @@
             </div>
         </div>
         <div class="topbar-actions">
-            <span id="engine-status-chip" class="engine-chip pending">로컬 엔진 확인중</span>
+            <span id="engine-status-chip" class="engine-chip pending">추론 모드 확인중</span>
             <button class="topbar-mode" type="button" aria-label="주간 모드로 전환">☀️</button>
         </div>
     </div>
@@ -1172,15 +1172,15 @@
 
         <div id="local-engine-guide" class="engine-guide pending">
             <div class="engine-guide-head">
-                <h3>PC 로컬 예측 엔진이 필요합니다</h3>
+                <h3>로컬 엔진 + 브라우저 추론 지원</h3>
                 <span id="engine-guide-badge" class="engine-guide-badge">확인중</span>
             </div>
-            <p class="engine-guide-summary">이 페이지는 별도 예측 모델 엔진이 사용자 PC에서 실행될 때 실제 추론이 동작합니다.</p>
-            <p id="engine-guide-status" class="engine-guide-status">로컬 엔진 상태를 확인 중입니다.</p>
+            <p class="engine-guide-summary">로컬 예측 엔진이 연결되면 서버 모델 기반 추론을 사용하고, 연결이 없으면 브라우저 경량 모델로 자동 전환됩니다.</p>
+            <p id="engine-guide-status" class="engine-guide-status">추론 모드를 확인 중입니다.</p>
             <ol class="engine-guide-steps">
                 <li>Releases에서 운영체제용 엔진 다운로드</li>
                 <li>압축 해제 후 실행 파일 실행</li>
-                <li>페이지에서 상태가 연결됨으로 바뀌면 예측 진행</li>
+                <li>엔진이 미연결이어도 브라우저 경량 모드로 예측 가능</li>
             </ol>
             <div class="engine-guide-actions">
                 <a id="engine-guide-release-link" class="engine-guide-link" href="#" target="_blank" rel="noopener noreferrer">엔진 다운로드 (Releases)</a>
@@ -1197,7 +1197,7 @@
                         <button type="button" id="demo-autofill-girl-btn" class="demo-autofill-btn">🧪 여아 데모 자동입력</button>
                     </div>
                 </div>
-                <p id="demo-note" class="demo-note">원하는 데모 버튼을 누르면 임의의 아동 데이터가 자동 입력되고 예측이 즉시 실행됩니다. GitHub Pages에서는 반드시 로컬 예측 엔진 실행 상태여야 합니다.</p>
+                <p id="demo-note" class="demo-note">원하는 데모 버튼을 누르면 임의의 아동 데이터가 자동 입력되고 예측이 즉시 실행됩니다. 로컬 엔진이 없으면 브라우저 경량 모델로 동작합니다.</p>
                 
                 <div id="adult-tab">
                     <div class="info-box">
@@ -1498,6 +1498,9 @@
         const DEFAULT_LOCAL_API_BASE = 'http://127.0.0.1:58761';
         const HEALTH_CHECK_INTERVAL_MS = 30000;
         let API_BASE_URL = '';
+        let LOCAL_ENGINE_AVAILABLE = false;
+        let LOCAL_ENGINE_LAST_ERROR = '';
+        const BROWSER_INFERENCE_VERSION = 'browser-light-1.0';
         const DEMO_CHILD_PROFILES = {
             boy: {
                 label: '남아 데모',
@@ -1667,10 +1670,12 @@
 
         async function updateEngineStatus() {
             if (!API_BASE_URL) {
-                setEngineStatusChip('online', '내장 API 모드');
+                LOCAL_ENGINE_AVAILABLE = false;
+                LOCAL_ENGINE_LAST_ERROR = '';
+                setEngineStatusChip('online', '브라우저 추론 모드');
                 setEngineGuideState(
                     'online',
-                    '현재는 내장 API 모드입니다. 별도 로컬 엔진 실행 없이 예측이 동작합니다.'
+                    '브라우저 경량 모델로 추론합니다. 엔진 연결 시 더 정교한 서버 모델 추론으로 전환됩니다.'
                 );
                 return;
             }
@@ -1678,7 +1683,7 @@
             setEngineStatusChip('pending', '로컬 엔진 확인중');
             setEngineGuideState(
                 'pending',
-                '이 페이지는 PC에서 로컬 예측 엔진 실행이 필요합니다. 연결 상태를 확인 중입니다.'
+                '로컬 엔진 연결 상태를 확인 중입니다. 미연결 시 브라우저 경량 모델로 자동 전환됩니다.'
             );
 
             const controller = new AbortController();
@@ -1700,6 +1705,8 @@
                     throw new Error('invalid health response');
                 }
 
+                LOCAL_ENGINE_AVAILABLE = true;
+                LOCAL_ENGINE_LAST_ERROR = '';
                 setEngineStatusChip('online', '로컬 엔진 연결됨');
                 setEngineGuideState(
                     'online',
@@ -1707,11 +1714,350 @@
                 );
             } catch (error) {
                 clearTimeout(timer);
-                setEngineStatusChip('offline', '로컬 엔진 미연결');
+                LOCAL_ENGINE_AVAILABLE = false;
+                LOCAL_ENGINE_LAST_ERROR = error && error.message ? error.message : 'unreachable';
+                setEngineStatusChip('offline', '브라우저 추론 모드');
                 setEngineGuideState(
                     'offline',
-                    '로컬 엔진이 꺼져 있습니다. 엔진을 실행한 뒤 다시 예측해 주세요.'
+                    '로컬 엔진 연결에 실패했습니다. 브라우저 경량 모델로 예측합니다. (정확도는 엔진 모드보다 낮을 수 있습니다.)'
                 );
+            }
+        }
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function parseDateSafe(value) {
+            if (!value) return null;
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return null;
+            return date;
+        }
+
+        function calculateAgeYears(birthDateString, referenceDateString = null) {
+            const birthDate = parseDateSafe(birthDateString);
+            if (!birthDate) return null;
+            const referenceDate = parseDateSafe(referenceDateString) || new Date();
+            const diffMs = referenceDate.getTime() - birthDate.getTime();
+            if (diffMs <= 0) return null;
+            return diffMs / (1000 * 60 * 60 * 24 * 365.25);
+        }
+
+        function estimateGeneticHeight(gender, fatherHeightCm, motherHeightCm) {
+            const fatherDefault = 173.0;
+            const motherDefault = 160.0;
+            const father = Number.isFinite(fatherHeightCm) ? fatherHeightCm : fatherDefault;
+            const mother = Number.isFinite(motherHeightCm) ? motherHeightCm : motherDefault;
+            const isMale = gender === 'M';
+            return isMale ? (father + mother + 13) / 2 : (father + mother - 13) / 2;
+        }
+
+        function estimateRemainingGrowth(ageYears, gender, pubertyStage, boneAgeYears, menarcheAge) {
+            const isMale = gender === 'M';
+            let baseRemaining;
+            if (isMale) {
+                if (ageYears < 10) baseRemaining = 58;
+                else if (ageYears < 12) baseRemaining = 42 - (ageYears - 10) * 5;
+                else if (ageYears < 14) baseRemaining = 30 - (ageYears - 12) * 6;
+                else if (ageYears < 16) baseRemaining = 18 - (ageYears - 14) * 5;
+                else if (ageYears < 18.5) baseRemaining = 8 - (ageYears - 16) * 3;
+                else baseRemaining = 1.5;
+            } else {
+                if (ageYears < 9) baseRemaining = 50;
+                else if (ageYears < 11) baseRemaining = 36 - (ageYears - 9) * 5.5;
+                else if (ageYears < 13) baseRemaining = 24 - (ageYears - 11) * 5.5;
+                else if (ageYears < 15) baseRemaining = 13 - (ageYears - 13) * 4;
+                else if (ageYears < 17.5) baseRemaining = 5 - (ageYears - 15) * 1.5;
+                else baseRemaining = 1.0;
+            }
+
+            const stage = (pubertyStage || 'unknown').toLowerCase();
+            const stageAdjustment = {
+                pre: 2.5,
+                early: 1.2,
+                mid: 0,
+                late: -1.8,
+                completed: -3.2,
+                unknown: 0
+            }[stage] ?? 0;
+
+            let boneAdjustment = 0;
+            if (Number.isFinite(boneAgeYears)) {
+                const gap = boneAgeYears - ageYears;
+                boneAdjustment = clamp(-gap * 1.4, -3.5, 3.5);
+            }
+
+            let menarcheAdjustment = 0;
+            if (!isMale && Number.isFinite(menarcheAge)) {
+                const yearsSinceMenarche = ageYears - menarcheAge;
+                if (yearsSinceMenarche > 2) menarcheAdjustment = -4.0;
+                else if (yearsSinceMenarche > 1) menarcheAdjustment = -2.0;
+            }
+
+            return clamp(baseRemaining + stageAdjustment + boneAdjustment + menarcheAdjustment, 0.5, 62);
+        }
+
+        function parseHeightHistoryWithAge(formData) {
+            const records = [];
+            const birthDate = parseDateSafe(formData.birth_date);
+            const appendRecord = (dateStr, heightCm, type = 'actual') => {
+                if (!birthDate || !Number.isFinite(heightCm)) return;
+                const date = parseDateSafe(dateStr);
+                if (!date) return;
+                const ageYears = (date.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+                if (!Number.isFinite(ageYears) || ageYears <= 0) return;
+                records.push({ age_years: ageYears, height_cm: heightCm, type });
+            };
+
+            (formData.height_history || []).forEach((item) => {
+                const h = Number.isFinite(item.height_cm) ? item.height_cm : parseFloat(item.height_cm);
+                appendRecord(item.date, h, 'actual');
+            });
+
+            appendRecord(new Date().toISOString().slice(0, 10), formData.current_height_cm, 'actual');
+            records.sort((a, b) => a.age_years - b.age_years);
+            return records;
+        }
+
+        function calculateGrowthVelocity(records) {
+            if (!records || records.length < 2) return null;
+            const first = records[0];
+            const last = records[records.length - 1];
+            const deltaAge = last.age_years - first.age_years;
+            if (deltaAge < 0.3) return null;
+            const velocity = (last.height_cm - first.height_cm) / deltaAge;
+            return Number.isFinite(velocity) ? clamp(velocity, -1, 12) : null;
+        }
+
+        function predictHeightAtTargetAge(currentAgeYears, currentHeightCm, targetAgeYears, adultPredictionCm, growthVelocityCmPerYear, gender) {
+            const adultAge = gender === 'F' ? 17.5 : 18.5;
+            if (targetAgeYears <= currentAgeYears) {
+                const yearsBack = currentAgeYears - targetAgeYears;
+                const fallbackVelocity = Number.isFinite(growthVelocityCmPerYear) ? growthVelocityCmPerYear : 5.0;
+                return currentHeightCm - yearsBack * clamp(fallbackVelocity, 2.5, 8.0);
+            }
+
+            const yearsToAdult = Math.max(0.5, adultAge - currentAgeYears);
+            const progress = clamp((targetAgeYears - currentAgeYears) / yearsToAdult, 0, 1);
+            const eased = Math.pow(progress, 0.78);
+            const predicted = currentHeightCm + (adultPredictionCm - currentHeightCm) * eased;
+            return clamp(predicted, currentHeightCm, adultPredictionCm + 0.8);
+        }
+
+        function buildBrowserPrediction(formData, reason = '') {
+            const ageYears = calculateAgeYears(formData.birth_date);
+            const currentHeight = formData.current_height_cm;
+            const records = parseHeightHistoryWithAge(formData);
+            const velocity = calculateGrowthVelocity(records);
+
+            const hasFather = Number.isFinite(formData.father_height_cm);
+            const hasMother = Number.isFinite(formData.mother_height_cm);
+            const hasParents = hasFather || hasMother;
+
+            const useGenetic = formData.use_genetic_formulas !== false && hasParents;
+            const useGrowth = formData.use_growth_pattern !== false;
+
+            const geneticPrediction = useGenetic
+                ? estimateGeneticHeight(formData.gender, formData.father_height_cm, formData.mother_height_cm)
+                : null;
+
+            const remainingGrowth = estimateRemainingGrowth(
+                ageYears || 11,
+                formData.gender,
+                formData.puberty_stage,
+                formData.bone_age_years,
+                formData.menarche_age
+            );
+
+            const velocityAdjustment = Number.isFinite(velocity) ? clamp((velocity - 5.0) * 0.9, -3.0, 4.0) : 0;
+            const growthPrediction = useGrowth
+                ? currentHeight + remainingGrowth + velocityAdjustment
+                : null;
+
+            let wGen = geneticPrediction !== null ? 0.56 : 0;
+            let wGrowth = growthPrediction !== null ? 0.44 : 0;
+            if (records.length >= 4 && wGrowth > 0) {
+                wGrowth += 0.08;
+                wGen -= 0.08;
+            }
+            if (!hasParents && wGrowth > 0) {
+                wGrowth = 1.0;
+                wGen = 0;
+            }
+            const weightSum = wGen + wGrowth;
+            const finalPrediction = weightSum > 0
+                ? ((geneticPrediction || 0) * wGen + (growthPrediction || 0) * wGrowth) / weightSum
+                : currentHeight + remainingGrowth;
+
+            const modelSpread = (geneticPrediction !== null && growthPrediction !== null)
+                ? Math.abs(geneticPrediction - growthPrediction)
+                : 0;
+
+            let confidenceScore = 52;
+            if (hasFather && hasMother) confidenceScore += 10;
+            if (records.length >= 3) confidenceScore += 9;
+            if (Number.isFinite(formData.weight_kg)) confidenceScore += 5;
+            if (Number.isFinite(formData.bone_age_years)) confidenceScore += 7;
+            if (formData.puberty_stage && formData.puberty_stage !== 'unknown') confidenceScore += 5;
+            if (Number.isFinite(ageYears)) {
+                const inSensitiveWindow = formData.gender === 'M'
+                    ? (ageYears >= 10.5 && ageYears <= 13.5)
+                    : (ageYears >= 9.5 && ageYears <= 12.5);
+                if (inSensitiveWindow) confidenceScore -= 8;
+            }
+            if (modelSpread >= 8) confidenceScore -= 8;
+            confidenceScore = clamp(Math.round(confidenceScore), 38, 84);
+
+            let uncertainty = 6.6;
+            if (hasFather && hasMother) uncertainty -= 1.0;
+            if (records.length >= 3) uncertainty -= 0.8;
+            if (Number.isFinite(formData.bone_age_years)) uncertainty -= 0.7;
+            if (Number.isFinite(formData.weight_kg)) uncertainty -= 0.5;
+            if (modelSpread >= 8) uncertainty += 1.2;
+            uncertainty = clamp(Number(uncertainty.toFixed(1)), 3.6, 8.8);
+
+            const confidence = confidenceScore >= 78
+                ? 'very_high'
+                : confidenceScore >= 68
+                    ? 'high'
+                    : confidenceScore >= 56
+                        ? 'medium'
+                        : 'low';
+
+            const strengths = [];
+            const limitations = [];
+            if (hasFather || hasMother) strengths.push('부모 키 정보가 반영되었습니다.');
+            if (records.length >= 3) strengths.push(`연속 키 기록 ${records.length}개가 반영되었습니다.`);
+            if (Number.isFinite(formData.weight_kg)) strengths.push('체중 정보가 포함되었습니다.');
+            if (Number.isFinite(formData.bone_age_years)) strengths.push('골연령 정보가 포함되었습니다.');
+            if (formData.puberty_stage && formData.puberty_stage !== 'unknown') strengths.push('사춘기 단계 정보가 포함되었습니다.');
+            if (modelSpread >= 8) limitations.push(`모델 간 예측 차이가 있습니다 (${modelSpread.toFixed(1)}cm).`);
+            if (LOCAL_ENGINE_LAST_ERROR) limitations.push('로컬 엔진 미연결로 브라우저 경량 모델이 사용되었습니다.');
+            limitations.push('브라우저 경량 모델 결과는 참고용 추정치입니다.');
+
+            const targetAges = [5, 10, 15, 18];
+            const predictions = {};
+            const predictedPoints = [];
+            targetAges.forEach((targetAge) => {
+                if (!Number.isFinite(ageYears) || targetAge <= ageYears + 0.05) return;
+                const predictedHeight = predictHeightAtTargetAge(
+                    ageYears,
+                    currentHeight,
+                    targetAge,
+                    finalPrediction,
+                    velocity,
+                    formData.gender
+                );
+                predictions[String(targetAge)] = {
+                    predicted_height_cm: predictedHeight,
+                    growth_expected: predictedHeight - currentHeight,
+                    years_until_target: targetAge - ageYears
+                };
+                predictedPoints.push({ age_years: targetAge, height_cm: predictedHeight, type: 'predicted' });
+            });
+
+            const curvePoints = [...records, ...predictedPoints]
+                .sort((a, b) => a.age_years - b.age_years);
+
+            const modelsUsed = [];
+            if (geneticPrediction !== null) modelsUsed.push('genetic_formula');
+            if (growthPrediction !== null) modelsUsed.push('growth_curve');
+            if (modelsUsed.length === 0) modelsUsed.push('browser_estimator');
+
+            return {
+                success: true,
+                prediction: Number(finalPrediction.toFixed(3)),
+                confidence,
+                models_used: modelsUsed,
+                details: {
+                    galton_prediction: geneticPrediction !== null ? Number(geneticPrediction.toFixed(3)) : undefined,
+                    growth_curve_prediction: growthPrediction !== null ? Number(growthPrediction.toFixed(3)) : undefined,
+                    confidence_score: confidenceScore,
+                    confidence_factors: {
+                        strengths,
+                        limitations
+                    },
+                    age_years: ageYears,
+                    prediction_range_cm: {
+                        lower: Number((finalPrediction - uncertainty).toFixed(1)),
+                        upper: Number((finalPrediction + uncertainty).toFixed(1))
+                    },
+                    uncertainty_cm: uncertainty,
+                    model_spread_cm: Number(modelSpread.toFixed(1)),
+                    model_conflict_warning: modelSpread >= 8
+                        ? `모델 간 예측 차이 ${modelSpread.toFixed(1)}cm로 불확실성이 높습니다.`
+                        : undefined,
+                    weighted_average: geneticPrediction !== null && growthPrediction !== null,
+                    weights: weightSum > 0 ? {
+                        galton: Number((wGen / weightSum).toFixed(3)),
+                        growth_curve: Number((wGrowth / weightSum).toFixed(3))
+                    } : undefined,
+                    growth_pattern: {
+                        records_count: records.length,
+                        growth_rate: Number.isFinite(velocity) ? Number(velocity.toFixed(3)) : null
+                    },
+                    input_context: {
+                        weight_kg: formData.weight_kg,
+                        bone_age_years: formData.bone_age_years,
+                        puberty_stage: formData.puberty_stage
+                    },
+                    inference_mode: 'browser_lightweight',
+                    inference_note: reason ? `브라우저 경량 모델 자동 전환 (${reason})` : '브라우저 경량 모델 추론'
+                },
+                growth_curve: {
+                    current: {
+                        age_years: ageYears,
+                        height_cm: currentHeight
+                    },
+                    curve: {
+                        ages: curvePoints.map((item) => item.age_years),
+                        heights: curvePoints.map((item) => item.height_cm),
+                        types: curvePoints.map((item) => item.type)
+                    },
+                    predictions,
+                    settings: {
+                        source: 'browser_lightweight',
+                        version: BROWSER_INFERENCE_VERSION
+                    }
+                },
+                version: BROWSER_INFERENCE_VERSION
+            };
+        }
+
+        async function requestAdultPrediction(formData) {
+            if (!API_BASE_URL) {
+                return buildBrowserPrediction(formData);
+            }
+
+            try {
+                const response = await fetch(getApiUrl('/api/predict/adult'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    if (response.status >= 500) {
+                        throw new Error(data.error || `server error ${response.status}`);
+                    }
+                    return data;
+                }
+                return data;
+            } catch (error) {
+                LOCAL_ENGINE_AVAILABLE = false;
+                LOCAL_ENGINE_LAST_ERROR = error && error.message ? error.message : 'engine_unreachable';
+                if (isLocalEngineMode()) {
+                    setEngineStatusChip('offline', '브라우저 추론 모드');
+                    setEngineGuideState(
+                        'offline',
+                        '로컬 엔진이 미연결 상태라 브라우저 경량 모델로 자동 전환되었습니다.'
+                    );
+                }
+                return buildBrowserPrediction(formData, LOCAL_ENGINE_LAST_ERROR);
             }
         }
 
@@ -2246,47 +2592,27 @@
                 return;
             }
 
-            try {
-                showLoading();
-                const response = await fetch(getApiUrl('/api/predict/adult'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    showAdultResult(data);
-                    // 성장 곡선도 함께 표시
-                    if (data.growth_curve) {
-                        showGrowthCurveResult(data.growth_curve, data.prediction);
-                    }
-                    
-                    // 예측 결과 저장
-                    const fullResult = {
-                        prediction: data.prediction,
-                        confidence: data.confidence,
-                        models_used: data.models_used,
-                        details: data.details,
-                        growth_curve: data.growth_curve
-                    };
-                    
-                    savePredictionToHistory(formData, fullResult);
-                } else {
-                    showError(data.error || '예측 중 오류가 발생했습니다.');
+            showLoading();
+            const data = await requestAdultPrediction(formData);
+            if (data.success) {
+                showAdultResult(data);
+                // 성장 곡선도 함께 표시
+                if (data.growth_curve) {
+                    showGrowthCurveResult(data.growth_curve, data.prediction);
                 }
-            } catch (error) {
-                if (isLocalEngineMode()) {
-                    updateEngineStatus();
-                    showError(
-                        `로컬 예측 엔진에 연결할 수 없습니다. 설치된 로컬 엔진 앱을 실행한 뒤 다시 시도해주세요. (API: ${API_BASE_URL})`
-                    );
-                    return;
-                }
-                showError('예측 요청 중 오류가 발생했습니다: ' + error.message);
+
+                // 예측 결과 저장
+                const fullResult = {
+                    prediction: data.prediction,
+                    confidence: data.confidence,
+                    models_used: data.models_used,
+                    details: data.details,
+                    growth_curve: data.growth_curve
+                };
+
+                savePredictionToHistory(formData, fullResult);
+            } else {
+                showError(data.error || '예측 중 오류가 발생했습니다.');
             }
         });
 
@@ -2417,6 +2743,15 @@
                 `;
             }
 
+            let inferenceModeHtml = '';
+            if (data.details.inference_mode === 'browser_lightweight') {
+                inferenceModeHtml = `
+                    <div style="margin-top: 12px; padding: 12px; background: rgba(62,130,242,0.16); border: 1px solid rgba(62,130,242,0.35); border-radius: 8px;">
+                        <p style="margin: 0;"><strong>브라우저 경량 추론 모드</strong>로 계산되었습니다. ${data.details.inference_note || ''}</p>
+                    </div>
+                `;
+            }
+
             const html = `
                 <div class="result-card">
                     <h3>예상 성인 키</h3>
@@ -2429,6 +2764,7 @@
                     </div>
                     <div style="margin-top: 20px; color: #666;">
                         <p><strong>사용된 모델:</strong> ${data.models_used.join(', ')}</p>
+                        ${inferenceModeHtml}
                         ${uncertaintyHtml}
                         ${conflictWarningHtml}
                         ${confidenceExplainHtml}
