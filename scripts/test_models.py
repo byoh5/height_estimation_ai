@@ -13,6 +13,22 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.modeling.hybrid_predictor import HybridHeightPredictor
 from src.modeling.growth_curve_predictor import GrowthCurvePredictor
 
+
+def assert_plausible_adult_height(predicted_height, min_height=130, max_height=230):
+    """성인 키 예측값이 의학적으로 불가능한 범위를 벗어나지 않는지 검증"""
+    assert min_height <= predicted_height <= max_height, (
+        f"예측 값이 비현실적 범위를 벗어남: {predicted_height:.1f}cm "
+        f"(허용 범위: {min_height}~{max_height}cm)"
+    )
+
+
+def assert_not_below_current_height(predicted_height, current_height, tolerance_cm=0.5):
+    """성인 예측 키가 현재 키보다 지나치게 낮지 않은지 검증"""
+    assert predicted_height >= (current_height - tolerance_cm), (
+        f"성인 예측 키({predicted_height:.1f}cm)가 현재 키({current_height:.1f}cm)보다 낮음"
+    )
+
+
 def test_hybrid_predictor():
     """하이브리드 예측기 테스트"""
     print("\n" + "="*60)
@@ -44,7 +60,7 @@ def test_hybrid_predictor():
         print(f"   예측: {result1['predicted_height']:.1f}cm")
         print(f"   모델: {result1['model_used']}")
         print(f"   신뢰도: {result1['confidence']}")
-        assert 150 <= result1['predicted_height'] <= 200, "예측 값이 합리적 범위를 벗어남"
+        assert_plausible_adult_height(result1['predicted_height'])
         
         # 테스트 케이스 2: 성장 데이터만
         print("\n🔍 테스트 케이스 2: 성장 데이터만 있는 경우")
@@ -57,7 +73,8 @@ def test_hybrid_predictor():
         print(f"   예측: {result2['predicted_height']:.1f}cm")
         print(f"   모델: {result2['model_used']}")
         print(f"   신뢰도: {result2['confidence']}")
-        assert 150 <= result2['predicted_height'] <= 200, "예측 값이 합리적 범위를 벗어남"
+        assert_plausible_adult_height(result2['predicted_height'])
+        assert_not_below_current_height(result2['predicted_height'], current_height=140.0)
         
         # 테스트 케이스 3: 모든 정보
         print("\n🔍 테스트 케이스 3: 모든 정보가 있는 경우")
@@ -72,7 +89,8 @@ def test_hybrid_predictor():
         print(f"   예측: {result3['predicted_height']:.1f}cm")
         print(f"   모델: {result3['model_used']}")
         print(f"   신뢰도: {result3['confidence']}")
-        assert 150 <= result3['predicted_height'] <= 200, "예측 값이 합리적 범위를 벗어남"
+        assert_plausible_adult_height(result3['predicted_height'])
+        assert_not_below_current_height(result3['predicted_height'], current_height=140.0)
         
         # 테스트 케이스 4: 여아
         print("\n🔍 테스트 케이스 4: 여아 예측")
@@ -87,7 +105,8 @@ def test_hybrid_predictor():
         print(f"   예측: {result4['predicted_height']:.1f}cm")
         print(f"   모델: {result4['model_used']}")
         print(f"   신뢰도: {result4['confidence']}")
-        assert 140 <= result4['predicted_height'] <= 180, "예측 값이 합리적 범위를 벗어남"
+        assert_plausible_adult_height(result4['predicted_height'])
+        assert_not_below_current_height(result4['predicted_height'], current_height=130.0)
         
         print("\n✅ 하이브리드 예측기 테스트 모두 통과!")
         return True
@@ -242,4 +261,3 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
-

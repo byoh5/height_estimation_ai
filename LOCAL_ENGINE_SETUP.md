@@ -16,8 +16,10 @@ GitHub Pages는 정적 웹만 제공하므로, 실제 예측은 로컬 엔진(Fl
 
 ## 3) 직접 Python으로 실행(개발/테스트용)
 
+권장 Python 버전: `3.11` (모델 학습/릴리즈 환경과 동일)
+
 ```bash
-python -m venv .venv
+python -m venv .venv  # 가능하면 python3.11 사용 권장
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 python scripts/run_local_engine.py --host 127.0.0.1 --port 58761
@@ -46,4 +48,3 @@ python scripts/run_local_engine.py
 페이지 URL에 `apiBase`를 붙입니다:
 
 `https://<your-id>.github.io/<repo>/?apiBase=http://127.0.0.1:58761`
-

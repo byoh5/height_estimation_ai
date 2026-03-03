@@ -11,6 +11,10 @@ import os
 import sys
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="키 예측 로컬 엔진 실행기")
@@ -33,10 +37,19 @@ def main():
     args = parse_args()
 
     if getattr(sys, "frozen", False):
-        # PyInstaller 배포 실행 시, 실행 파일 위치를 기준 경로로 사용
+        # PyInstaller onedir 배포 시 데이터 파일은 _internal 하위에 배치된다.
         base_dir = Path(sys.executable).resolve().parent
-        os.environ.setdefault("HEIGHT_AI_BASE_DIR", str(base_dir))
-        os.environ.setdefault("HEIGHT_AI_MODEL_DIR", str(base_dir / "models" / "saved_models"))
+        bundle_dir = Path(getattr(sys, "_MEIPASS", base_dir / "_internal")).resolve()
+        model_dir = bundle_dir / "models" / "saved_models"
+        if not model_dir.exists():
+            # 일부 환경에서는 _MEIPASS가 비어 있어 실행 파일 기준 경로를 사용해야 한다.
+            fallback_model_dir = base_dir / "models" / "saved_models"
+            if fallback_model_dir.exists():
+                bundle_dir = base_dir
+                model_dir = fallback_model_dir
+
+        os.environ.setdefault("HEIGHT_AI_BASE_DIR", str(bundle_dir))
+        os.environ.setdefault("HEIGHT_AI_MODEL_DIR", str(model_dir))
 
     if args.allow_origin:
         os.environ["HEIGHT_AI_ALLOWED_ORIGINS"] = ",".join(args.allow_origin)
@@ -60,4 +73,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

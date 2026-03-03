@@ -36,9 +36,11 @@
 
 ### 설치
 
+권장 Python 버전: `3.11` (모델 학습/릴리즈 환경과 동일)
+
 ```bash
 # 1) 가상환경 생성 및 활성화
-python3 -m venv .venv
+python3 -m venv .venv  # 가능하면 python3.11 사용 권장
 source .venv/bin/activate
 
 # 2) pip 업데이트
