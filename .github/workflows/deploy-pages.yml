@@ -1,5 +1,5 @@
 name: Deploy GitHub Pages
-# Note: keep this workflow triggerable via push/workflow_dispatch.
+# Note: keep this workflow triggerable via push/workflow_dispatch
 
 on:
   workflow_dispatch:
