@@ -1,0 +1,113 @@
+name: Build Local Engine Bundles
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            package_id: linux-x64
+          - os: windows-latest
+            package_id: windows-x64
+          - os: macos-latest
+            package_id: macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build local engine executable
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            SEP=";"
+          else
+            SEP=":"
+          fi
+
+          pyinstaller \
+            --noconfirm \
+            --clean \
+            --console \
+            --onedir \
+            --name height-prediction-local-engine \
+            --paths . \
+            --add-data "models${SEP}models" \
+            --add-data "app/templates${SEP}app/templates" \
+            --collect-all sklearn \
+            --collect-all scipy \
+            --collect-all numpy \
+            --collect-all pandas \
+            --collect-all joblib \
+            scripts/run_local_engine.py
+
+      - name: Prepare package
+        shell: bash
+        env:
+          PACKAGE_ID: ${{ matrix.package_id }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import shutil
+          import zipfile
+          
+          package_id = os.environ["PACKAGE_ID"]
+          package_name = f"height-prediction-local-engine-{package_id}"
+          
+          release_dir = Path("release")
+          package_dir = release_dir / package_name
+          dist_dir = Path("dist") / "height-prediction-local-engine"
+          
+          if package_dir.exists():
+              shutil.rmtree(package_dir)
+          
+          package_dir.mkdir(parents=True, exist_ok=True)
+          shutil.copytree(dist_dir, package_dir / "height-prediction-local-engine")
+          shutil.copy2("LOCAL_ENGINE_SETUP.md", package_dir / "LOCAL_ENGINE_SETUP.md")
+          shutil.copy2("README.md", package_dir / "PROJECT_README.md")
+          
+          zip_path = release_dir / f"{package_name}.zip"
+          if zip_path.exists():
+              zip_path.unlink()
+          
+          with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for path in package_dir.rglob("*"):
+                  zf.write(path, path.relative_to(release_dir))
+          
+          print(f"Created: {zip_path}")
+          PY
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-engine-${{ matrix.package_id }}
+          path: release/*.zip
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip

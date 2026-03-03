@@ -67,9 +67,9 @@ def prepare_features_for_age_prediction(df, target_age_years):
     X['gender_F'] = (X['gender'] == 'F').astype(int)
     X = X.drop('gender', axis=1)
     
-        # 컬럼 순서 명시적 지정 및 DataFrame으로 변환 (feature name 경고 방지)
-        X = X[['age_years', 'age_months', 'height_cm', 'years_to_target', 'months_to_target', 'gender_M', 'gender_F']]
-        X.columns = ['age_years', 'age_months', 'height_cm', 'years_to_target', 'months_to_target', 'gender_M', 'gender_F']
+    # 컬럼 순서 명시적 지정 및 DataFrame으로 변환 (feature name 경고 방지)
+    X = X[['age_years', 'age_months', 'height_cm', 'years_to_target', 'months_to_target', 'gender_M', 'gender_F']]
+    X.columns = ['age_years', 'age_months', 'height_cm', 'years_to_target', 'months_to_target', 'gender_M', 'gender_F']
     
     y = df_valid['estimated_target_height']
     
@@ -197,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

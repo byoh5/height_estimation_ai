@@ -78,7 +78,7 @@
 
 ### 4.1 개발 환경
 - **언어**: Python 3.8 이상
-- **패키지 관리**: pipenv (프로젝트 표준)
+- **패키지 관리**: pip + `requirements.txt`
 
 ### 4.2 주요 라이브러리
 - **데이터 처리**: 
@@ -134,7 +134,6 @@ height_estimation_ai/
 ├── tests/
 │   └── test_*.py
 ├── requirements.txt
-├── Pipfile              # pipenv 설정 파일
 ├── README.md
 └── SPECIFICATION.md     # 본 문서
 ```
@@ -242,5 +241,4 @@ height_estimation_ai/
 
 **문서 버전**: 1.0  
 **작성일**: 2025  
-**최종 수정일**: 2025-12-29
-
+**최종 수정일**: 2026-03-03

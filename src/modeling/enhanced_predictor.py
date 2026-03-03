@@ -16,12 +16,14 @@ from typing import Dict, Optional, List, Tuple
 from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-MODEL_DIR = PROJECT_ROOT / "models" / "saved_models"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.modeling.growth_curve_predictor import GrowthCurvePredictor
 from src.utils.age_calculator import calculate_age, calculate_age_months, parse_date_input, validate_birth_date
 from src.utils.growth_factors import HeightPredictionAdjuster, get_available_countries
+from src.utils.runtime_paths import get_model_dir
+
+MODEL_DIR = get_model_dir()
 
 class EnhancedHeightPredictor:
     """향상된 키 예측 모델 - 성장 곡선과 성인 키 예측 일관성 확보"""
@@ -141,6 +143,165 @@ class EnhancedHeightPredictor:
             'records_count': len(sorted_records),
             'age_range': (sorted_records[0]['age_years'], sorted_records[-1]['age_years'])
         }
+
+    @staticmethod
+    def _is_puberty_window(age_years: Optional[float], gender: str) -> bool:
+        """사춘기 변동성이 큰 구간 판별"""
+        if age_years is None:
+            return False
+
+        if gender.upper() == 'M':
+            return 10.0 <= age_years <= 14.5
+        if gender.upper() == 'F':
+            return 9.0 <= age_years <= 13.5
+        return False
+
+    def _assess_confidence_and_uncertainty(self,
+                                           gender: str,
+                                           age_years: Optional[float],
+                                           current_height_cm: Optional[float],
+                                           has_parents: bool,
+                                           has_menarche: bool,
+                                           height_records: List[Dict],
+                                           model_predictions: List[float],
+                                           warning_text: Optional[str],
+                                           final_prediction: float,
+                                           weight_kg: Optional[float],
+                                           bone_age_years: Optional[float],
+                                           puberty_stage: Optional[str]) -> Dict:
+        """
+        보수적 신뢰도 산정 + 오차범위 추정.
+        - 입력 완성도
+        - 사춘기 변동성
+        - 모델 간 불일치(충돌)
+        를 함께 반영한다.
+        """
+        score = 70
+        score_cap = 90
+        strengths: List[str] = []
+        limitations: List[str] = []
+
+        history_count = len(height_records)
+        model_spread_cm = 0.0
+        if len(model_predictions) >= 2:
+            model_spread_cm = float(max(model_predictions) - min(model_predictions))
+
+        if has_parents:
+            score += 8
+            strengths.append("부모 키 정보가 포함되었습니다.")
+
+        if history_count >= 3:
+            score += 6
+            strengths.append(f"연속 키 기록 {history_count}개가 반영되었습니다.")
+        elif history_count >= 2:
+            score += 3
+
+        if history_count >= 5:
+            score += 4
+
+        if has_parents and history_count >= 3:
+            score += 6
+            strengths.append("부모 키 + 성장 이력이 함께 반영되었습니다.")
+
+        if has_menarche:
+            score += 4
+            strengths.append("초경 정보가 예측에 반영되었습니다.")
+
+        puberty_window = self._is_puberty_window(age_years, gender)
+        adolescent_window = age_years is not None and 8.0 <= age_years <= 15.0
+
+        if puberty_window:
+            score -= 8
+            limitations.append("사춘기 변동 구간으로 성장 속도 편차가 큽니다.")
+            score_cap = min(score_cap, 82)
+
+        if model_spread_cm >= 10:
+            score -= 10
+            limitations.append(f"모델 간 예측 차이가 큽니다 ({model_spread_cm:.1f}cm).")
+            score_cap = min(score_cap, 68)
+        elif model_spread_cm >= 6:
+            score -= 6
+            limitations.append(f"모델 간 예측 차이가 있습니다 ({model_spread_cm:.1f}cm).")
+            score_cap = min(score_cap, 76)
+        elif model_spread_cm >= 3:
+            score -= 3
+
+        if adolescent_window and bone_age_years is None:
+            score -= 6
+            limitations.append("골연령 정보가 없어 사춘기 보정 정확도가 제한됩니다.")
+            score_cap = min(score_cap, 78)
+        elif bone_age_years is not None:
+            strengths.append("골연령 정보가 포함되었습니다.")
+
+        if weight_kg is None:
+            score -= 3
+            limitations.append("체중 정보가 없어 일부 공식 보정이 제한됩니다.")
+        else:
+            strengths.append("체중 정보가 포함되었습니다.")
+
+        if adolescent_window and (not puberty_stage or puberty_stage == 'unknown'):
+            score -= 3
+            limitations.append("사춘기 단계 정보가 없어 불확실성이 커질 수 있습니다.")
+            score_cap = min(score_cap, 74)
+        elif puberty_stage and puberty_stage != 'unknown':
+            strengths.append("사춘기 진행 단계 정보가 포함되었습니다.")
+
+        if warning_text:
+            score -= 4
+            limitations.append("학습 데이터 범위를 벗어난 입력이 일부 포함됩니다.")
+            score_cap = min(score_cap, 72)
+
+        score = max(25, min(score_cap, int(round(score))))
+
+        if score >= 88:
+            confidence = 'very_high'
+        elif score >= 74:
+            confidence = 'high'
+        elif score >= 58:
+            confidence = 'medium'
+        else:
+            confidence = 'low'
+
+        uncertainty_cm = 2.8
+        if puberty_window:
+            uncertainty_cm += 1.0
+        uncertainty_cm += min(model_spread_cm * 0.25, 2.0)
+        if adolescent_window and bone_age_years is None:
+            uncertainty_cm += 0.8
+        if adolescent_window and (not puberty_stage or puberty_stage == 'unknown'):
+            uncertainty_cm += 0.5
+        if weight_kg is None:
+            uncertainty_cm += 0.4
+        if history_count >= 5:
+            uncertainty_cm -= 0.5
+        elif history_count >= 3:
+            uncertainty_cm -= 0.3
+        if has_parents:
+            uncertainty_cm -= 0.4
+        if warning_text:
+            uncertainty_cm += 0.4
+
+        uncertainty_cm = round(float(max(2.0, min(8.0, uncertainty_cm))), 1)
+
+        lower = round(float(final_prediction - uncertainty_cm), 1)
+        upper = round(float(final_prediction + uncertainty_cm), 1)
+        if current_height_cm is not None:
+            lower = round(float(max(lower, current_height_cm)), 1)
+
+        return {
+            'confidence': confidence,
+            'confidence_score': score,
+            'uncertainty_cm': uncertainty_cm,
+            'prediction_range_cm': {
+                'lower': lower,
+                'upper': upper
+            },
+            'model_spread_cm': round(model_spread_cm, 1),
+            'confidence_factors': {
+                'strengths': strengths,
+                'limitations': limitations
+            }
+        }
     
     def predict(self,
                 birth_date: Optional[str] = None,
@@ -151,6 +312,9 @@ class EnhancedHeightPredictor:
                 mother_height_cm: Optional[float] = None,
                 height_history: Optional[List[Dict]] = None,
                 menarche_age: Optional[float] = None,
+                weight_kg: Optional[float] = None,
+                bone_age_years: Optional[float] = None,
+                puberty_stage: Optional[str] = None,
                 country_code: str = 'DEFAULT',
                 use_genetic_formulas: bool = True,
                 use_growth_pattern: bool = True) -> Dict:
@@ -172,6 +336,9 @@ class EnhancedHeightPredictor:
             mother_height_cm: 어머니 키 (cm)
             height_history: 과거 키 기록 [{'date': 'YYYY-MM-DD', 'height_cm': float}, ...]
             menarche_age: 초경 시작 나이 (여성만, 선택사항)
+            weight_kg: 현재 체중 (kg, 선택사항)
+            bone_age_years: 골연령 (세, 선택사항)
+            puberty_stage: 사춘기 단계 (unknown/pre/early/mid/late/completed)
             country_code: 국가 코드
             use_genetic_formulas: 유전 공식 사용 여부
             use_growth_pattern: 성장 패턴 분석 사용 여부
@@ -227,12 +394,42 @@ class EnhancedHeightPredictor:
                 
                 # 현재 나이와 비교
                 if birth_date:
-                    try:
-                        age_years_temp, _ = self._calculate_age_from_birthdate(birth_date, current_date)
-                        if menarche_age > age_years_temp:
-                            raise ValueError(f"초경 나이({menarche_age}세)는 현재 나이({age_years_temp:.1f}세)보다 클 수 없습니다.")
-                    except:
-                        pass  # 나이 계산 실패 시 검증 건너뜀
+                    age_years_temp, _ = self._calculate_age_from_birthdate(birth_date, current_date)
+                    if menarche_age > age_years_temp:
+                        raise ValueError(
+                            f"초경 나이({menarche_age}세)는 현재 나이({age_years_temp:.1f}세)보다 클 수 없습니다."
+                        )
+
+        # 체중 검증
+        if weight_kg is not None:
+            try:
+                weight_kg = float(weight_kg)
+            except (TypeError, ValueError):
+                raise ValueError(f"체중은 숫자여야 합니다. 입력값: {weight_kg}")
+
+            if weight_kg <= 0:
+                raise ValueError(f"체중은 0보다 커야 합니다. 입력값: {weight_kg}kg")
+            if weight_kg > 200:
+                raise ValueError(f"체중은 200kg 이하여야 합니다. 입력값: {weight_kg}kg")
+
+        # 골연령 검증
+        if bone_age_years is not None:
+            try:
+                bone_age_years = float(bone_age_years)
+            except (TypeError, ValueError):
+                raise ValueError(f"골연령은 숫자여야 합니다. 입력값: {bone_age_years}")
+
+            if bone_age_years < 0:
+                raise ValueError(f"골연령은 0세 이상이어야 합니다. 입력값: {bone_age_years}세")
+            if bone_age_years > 20:
+                raise ValueError(f"골연령은 20세 이하여야 합니다. 입력값: {bone_age_years}세")
+
+        # 사춘기 단계 검증
+        allowed_puberty_stages = {'unknown', 'pre', 'early', 'mid', 'late', 'completed', None}
+        if puberty_stage not in allowed_puberty_stages:
+            raise ValueError(
+                f"사춘기 단계는 unknown/pre/early/mid/late/completed 중 하나여야 합니다. 입력값: {puberty_stage}"
+            )
         
         # 나이 계산
         age_years = None
@@ -546,5 +743,35 @@ class EnhancedHeightPredictor:
         results['details']['adjustments'] = adjustment_result['adjustments']
         results['details']['total_adjustment'] = total_adjustment
         results['details']['country_code'] = country_code
+
+        # 입력 맥락(가독성/해석용)
+        results['details']['input_context'] = {
+            'weight_kg': weight_kg,
+            'bone_age_years': bone_age_years,
+            'puberty_stage': puberty_stage or 'unknown'
+        }
+
+        # 보수적 신뢰도/오차범위 재산정
+        confidence_assessment = self._assess_confidence_and_uncertainty(
+            gender=gender,
+            age_years=age_years,
+            current_height_cm=current_height_cm,
+            has_parents=has_parents,
+            has_menarche=has_menarche,
+            height_records=height_records,
+            model_predictions=[float(x) for x in predictions],
+            warning_text=results['details'].get('warning'),
+            final_prediction=adjusted_prediction,
+            weight_kg=weight_kg,
+            bone_age_years=bone_age_years,
+            puberty_stage=puberty_stage
+        )
+
+        results['confidence'] = confidence_assessment['confidence']
+        results['details'].update(confidence_assessment)
+        if confidence_assessment['model_spread_cm'] >= 6:
+            results['details']['model_conflict_warning'] = (
+                f"모델 간 예측 차이 {confidence_assessment['model_spread_cm']:.1f}cm로 불확실성이 높습니다."
+            )
         
         return results

@@ -16,6 +16,12 @@
 - 현재 나이와 키를 기반으로 미래 특정 나이의 키 예측
 - 성장 곡선 시각화 가능
 
+### 3. 신뢰도/불확실성 표시
+- 결과를 단일 수치가 아닌 `중심값 + 오차범위(±cm)`로 제공
+- `신뢰도 점수(0~100)`와 근거/제한사항을 함께 표시
+- 모델 간 예측 차이가 크면 `모델 불일치 경고`를 자동 표기
+- 사춘기 핵심 입력(골연령/체중/사춘기 단계) 누락 시 신뢰도 상한을 보수적으로 제한
+
 ---
 
 ## 📊 데이터셋
@@ -31,8 +37,15 @@
 ### 설치
 
 ```bash
-# 필요한 패키지 설치
-pip install pandas numpy scikit-learn joblib
+# 1) 가상환경 생성 및 활성화
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2) pip 업데이트
+python -m pip install --upgrade pip
+
+# 3) 프로젝트 의존성 설치
+pip install -r requirements.txt
 ```
 
 ### 예측 사용
@@ -73,6 +86,33 @@ python3 scripts/predict_height.py
 # 성장 곡선 예측
 python3 scripts/predict_growth_curve.py
 ```
+
+---
+
+## 🌐 GitHub Pages + 로컬 엔진 운영
+
+이 프로젝트는 **정적 프론트(GitHub Pages)** + **사용자 PC 로컬 예측 엔진(Flask)** 구조를 지원합니다.
+
+### 동작 방식
+- GitHub Pages에 올라간 웹이 `http://127.0.0.1:58761` 로컬 API를 호출
+- 실제 모델 추론은 사용자 PC에서 수행 (서버비 0원 운영 가능)
+
+### 로컬 엔진 실행 (Python)
+```bash
+python scripts/run_local_engine.py --host 127.0.0.1 --port 58761
+```
+
+### 정적 페이지 내보내기
+```bash
+python scripts/export_pages_site.py
+```
+- 결과 파일: `docs/index.html`
+
+### GitHub Actions
+- Pages 배포: `.github/workflows/deploy-pages.yml`
+- 로컬엔진 번들 빌드/Release 업로드: `.github/workflows/release-local-engine.yml`
+
+자세한 설치 가이드는 [LOCAL_ENGINE_SETUP.md](LOCAL_ENGINE_SETUP.md) 참고.
 
 ---
 
@@ -152,5 +192,4 @@ python3 src/modeling/train_growth_curve_model.py
 
 ---
 
-**최종 업데이트**: 2025-12-29
-
+**최종 업데이트**: 2026-03-03

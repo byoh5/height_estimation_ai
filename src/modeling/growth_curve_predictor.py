@@ -9,9 +9,10 @@ from pathlib import Path
 import joblib
 import json
 from typing import Dict, Optional, List
+from src.utils.runtime_paths import get_model_dir
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-MODEL_DIR = PROJECT_ROOT / "models" / "saved_models"
+MODEL_DIR = get_model_dir()
 
 class GrowthCurvePredictor:
     """특정 나이의 키 예측 모델"""
@@ -221,4 +222,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

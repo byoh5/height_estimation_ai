@@ -10,9 +10,10 @@ import joblib
 import json
 from typing import Dict, Optional, List
 from datetime import datetime
+from src.utils.runtime_paths import get_model_dir
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-MODEL_DIR = PROJECT_ROOT / "models" / "saved_models"
+MODEL_DIR = get_model_dir()
 import sys
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -252,4 +253,3 @@ class EnhancedGrowthCurvePredictor:
                 'use_growth_pattern': use_growth_pattern
             }
         }
-
