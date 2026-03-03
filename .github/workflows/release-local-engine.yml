@@ -38,6 +38,22 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Validate bundled models
+        shell: bash
+        run: |
+          test -d models/saved_models || { echo "❌ models/saved_models 디렉토리가 없습니다."; exit 1; }
+          required=(
+            "models/saved_models/galton_gradient_boosting_model.pkl"
+            "models/saved_models/growth_curve_age_5_model.pkl"
+            "models/saved_models/growth_curve_age_10_model.pkl"
+            "models/saved_models/growth_curve_age_15_model.pkl"
+            "models/saved_models/growth_curve_age_18_model.pkl"
+          )
+          for path in "${required[@]}"; do
+            test -f "$path" || { echo "❌ 필수 모델 누락: $path"; exit 1; }
+          done
+          echo "✅ 핵심 모델 파일 확인 완료"
+
       - name: Build local engine executable
         shell: bash
         run: |

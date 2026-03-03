@@ -1,0 +1,24 @@
+{
+  "model_type": "galton_parental_height",
+  "algorithm": "gradient_boosting",
+  "features": [
+    "father_height_cm",
+    "mother_height_cm",
+    "midparent_height_cm",
+    "gender_M",
+    "gender_F"
+  ],
+  "target": "adult_height_cm",
+  "metrics": {
+    "train_mae": 3.5072427184410158,
+    "val_mae": 4.231469718800185,
+    "train_rmse": 4.554300247174276,
+    "val_rmse": 5.505395951926962,
+    "train_r2": 0.7529544546063391,
+    "val_r2": 0.6057033606015201
+  },
+  "data_info": {
+    "training_samples": 747,
+    "validation_samples": 187
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "model_type": "growth_curve_age_prediction",
+  "target_age_years": 18,
+  "algorithm": "gradient_boosting",
+  "features": [
+    "age_years",
+    "age_months",
+    "height_cm",
+    "years_to_target",
+    "months_to_target",
+    "gender_M",
+    "gender_F"
+  ],
+  "target": "height_at_18_years",
+  "metrics": {
+    "train_mae": 0.22528733578163462,
+    "val_mae": 0.22822903014019694,
+    "train_rmse": 0.29232786412493983,
+    "val_rmse": 0.295997765015297,
+    "train_r2": 0.9989779621827338,
+    "val_r2": 0.9989520570317029
+  },
+  "data_info": {
+    "training_samples": 96799,
+    "validation_samples": 24200
+  }
+}
